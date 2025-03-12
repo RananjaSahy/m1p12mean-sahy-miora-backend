@@ -14,10 +14,12 @@ mongoose.connect(process.env.MONGO_URI, {
 }).then(() => console.log("MongoDB connecté"))
  .catch(err => console.log(err));
 
- // Routes
+app.use('/services',require('./routes/service.routes'));
 app.use('/auth', require('./routes/auth.routes'));
 app.use('/utilisateurs', require('./routes/utilisateurs.routes')); 
 app.use('/authstaff', require('./routes/staffAuth.routes'));
 
 app.listen(PORT, () => console.log(`Serveur démarré sur le port
 ${PORT}`));
+
+
