@@ -1,0 +1,16 @@
+create MEAN
+Sahy                    Miora
+Connexion               services
+inscription             prix_services_par_defaut
+gestion equipe
+
+personnels_vehicules    rendez-vous
+                        taches
+
+--atao denormalisation le prix services
+services(
+    id,
+    nom,
+    description,
+    [{date,prix}] 
+)
