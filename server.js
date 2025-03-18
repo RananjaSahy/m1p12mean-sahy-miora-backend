@@ -19,6 +19,7 @@ app.use('/auth', require('./routes/auth.routes'));
 app.use('/utilisateurs', require('./routes/utilisateurs.routes')); 
 app.use('/authstaff', require('./routes/staffAuth.routes'));
 app.use('/typevehicules', require('./routes/typevehicule.routes'));
+app.use('/vehicules', require('./routes/vehicule.routes'));
 
 app.listen(PORT, () => console.log(`Serveur démarré sur le port
 ${PORT}`));
