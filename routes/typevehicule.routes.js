@@ -16,10 +16,28 @@ router.post('/', authMiddleware(['manager']), async (req,res) => {
 
 router.get('/', async(req,res) => {
     try{
-        const typevehicules = Typevehicule.find();
-        res.json(typevehicules);
+        const { page = 1, limit, search = "", order = "asc", sort = "libelle" } = req.query;
+        const searchQuery = search
+        ? {
+              $or: [
+                  { libelle: { $regex: search, $options: "i" } },
+                  { description: { $regex: search, $options: "i" } },
+              ],
+          }
+        : {};
+        const totalTypevehicule = await Typevehicule.countDocuments({...searchQuery });
+        const sortOrder = order === "desc" ? -1 : 1;
+        let query = Typevehicule.find({ ...searchQuery }).sort({ [sort]: sortOrder });
+
+        if (limit && parseInt(limit) > 0) {
+            query = query.skip((page - 1) * limit).limit(parseInt(limit));
+        }
+
+        const typevehicules = await query;
+        res.status(200).json({typevehicules, total: totalTypevehicule});
     }catch(error){
-        res.status(500).json({ message: error.message });
+        res.status(500).json({message : error.message});
+        console.log(error.message);
     }
 });
 
