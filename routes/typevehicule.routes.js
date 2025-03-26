@@ -16,7 +16,7 @@ router.post('/', authMiddleware(['manager']), async (req,res) => {
 
 router.get('/', async(req,res) => {
     try{
-        const typevehicules = Typevehicule.find();
+        const typevehicules =await Typevehicule.find();
         res.json(typevehicules);
     }catch(error){
         res.status(500).json({ message: error.message });
