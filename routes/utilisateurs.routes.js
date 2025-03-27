@@ -65,6 +65,7 @@ router.get("/mecaniciens", authMiddleware(['manager']), async(req, res) => {
         console.log(error.message);
     }
 });
+
 router.get('/services/:vehiculeId', authMiddleware(['client']), async (req, res) => {
     try {
         const vehiculeId = req.params.vehiculeId;
@@ -84,5 +85,6 @@ router.get('/services/:vehiculeId', authMiddleware(['client']), async (req, res)
         res.status(500).json({ message: error.message });
     }
 });
+
 
 module.exports = router;
