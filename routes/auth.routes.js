@@ -8,8 +8,7 @@ require('dotenv').config();
 
 const generateToken = (user) => {
     return jwt.sign(
-        { id: user._id, role: user.role ,email: user.email
-           },
+        { id: user._id, role: user.role, email: user.email },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN }
     );
@@ -24,6 +23,7 @@ router.post('/register', [
 ], async (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
     try {
         const { email, mdp, nom, prenom } = req.body;
         let user = await Utilisateur.findOne({ email });
