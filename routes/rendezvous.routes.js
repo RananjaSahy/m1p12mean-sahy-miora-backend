@@ -122,7 +122,8 @@ router.post('/ajouter', authMiddleware(['client']), async (req, res) => {
 router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
     try {
         const utilisateur = req.user.id; // ID de l'utilisateur extrait du token
-        const { date, vehicule, services, commentaire } = req.body;
+        console.log(req.body);
+        const { date, vehicule, services, commentaire, email } = req.body;
 
         if (!mongoose.Types.ObjectId.isValid(vehicule)) {
             return res.status(400).json({ message: "ID du véhicule invalide." });
@@ -172,15 +173,14 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
         });
 
         await nouveauRendezvous.save();
-
+        console.log(" ============= " +email);
         // Générer le PDF avec les prix estimés
-        const pdfPath = await generateDevisPDF(formattedDate, servicesRendezVous, totalPrix, totalDuree);
-            await sen
+        // const pdfPath = await generateDevisPDF(formattedDate, servicesRendezVous, totalPrix, totalDuree);
+            await sendMailUsingTemplate(formattedDate,servicesRendezVous,totalPrix,totalDuree,email);
         res.status(201).json({ 
             message: "Rendez-vous enregistré avec succès !", 
             prixTotal: totalPrix,
-            dureeTotale: totalDuree,
-            pdf: pdfPath
+            dureeTotale: totalDuree
         });
 
     } catch (error) {
@@ -223,11 +223,11 @@ router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
         // Formatter les données pour ajouter prix et durée estimés
         const formattedRendezvous = rendezvous.map(rdv => {
             const servicesFormatted = rdv.services.map(service => {
-                // Filtrer l'historique pour ne garder que celui du type de véhicule du rendez-vous
-                const historiqueValide = service.historique.find(hist =>
+                // Vérifie que service.historique est bien défini avant d'utiliser find()
+                const historiqueValide = service.historique?.find(hist =>
                     hist.typevehicule.equals(rdv.vehicule.typevehicule) && hist.etat
                 );
-
+            
                 return {
                     _id: service._id,
                     nom: service.nom,
@@ -236,6 +236,7 @@ router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
                     dureeEstimee: historiqueValide ? historiqueValide.duree : null
                 };
             });
+            
 
             return {
                 _id: rdv._id,
@@ -254,13 +255,13 @@ router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
 });
 
 
-async function  sendMailUsingTemplate(date,services,totalPrix,totalDuree){
+async function  sendMailUsingTemplate(date,services,totalPrix,totalDuree,email){
     try{
         const auth = {
             user:process.env.USER_MAIL,
             pass:process.env.USER_PASS
         };
-        const toEmail = "voninolivam@gmail.com"
+        const toEmail = email
         const froms = process.env.USER_ADRESS
         await Mail(auth,toEmail,froms,date,services,totalPrix,totalDuree);
     }catch(eror){
@@ -275,8 +276,8 @@ async function calculDevis(date, vehicule, services) {
             return { totalPrix: 0, totalDuree: 0, details: [] }; 
         }
 
-        console.log("🔹 Services demandés :", services);
-        console.log("🔹 ID du véhicule :", vehicule);
+        // console.log("🔹 Services demandés :", services);
+        // console.log("🔹 ID du véhicule :", vehicule);
 
         // Récupérer le type de véhicule à partir de l'ID du véhicule
         const vehiculeData = await Vehicule.findById(vehicule).populate('typevehicule');
@@ -285,7 +286,7 @@ async function calculDevis(date, vehicule, services) {
         }
 
         const typeVehiculeId = vehiculeData.typevehicule._id;
-        console.log("🔹 Type de véhicule trouvé :", typeVehiculeId);
+        // console.log("🔹 Type de véhicule trouvé :", typeVehiculeId);
 
         // Récupérer les services demandés avec seulement l'historique le plus récent
         const servicesDetails = await Service.aggregate([
@@ -304,7 +305,7 @@ async function calculDevis(date, vehicule, services) {
             }
         ]);
 
-        console.log("🔹 Services trouvés :", servicesDetails);
+        // console.log("🔹 Services trouvés :", servicesDetails);
 
         // Calculer le total du devis
         const totalPrix = servicesDetails.reduce((sum, service) => sum + service.prix, 0);

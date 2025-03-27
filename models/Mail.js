@@ -30,82 +30,8 @@ function getandCompleteHTML(){
     return html;
 }
 
-// async function sendMailUsingTemplate(auth_generique, toEmail, fromEmail, date, services) {
-//     let pdfPath;
-//     try {
-//         // 1. Configuration du transporteur SMTP
-//         const transporter = nodemailer.createTransport({
-//             host: "smtp.mailersend.net",
-//             port: 587,
-//             secure: false,
-//             auth: auth_generique,
-//             tls: { rejectUnauthorized: true } // À mettre à false seulement en développement
-//         });
-
-//         // 2. Génération du PDF
-//         pdfPath = await generateDevisPDF(date, services);
-//         if (!pdfPath) throw new Error("Échec de la génération du PDF");
-
-//         // 3. Récupération et validation du template
-//         let template =getandCompleteHTML(date, services);
-        
-//         // Vérification que le template est bien une string
-//         if (typeof template !== 'string') {
-//             throw new Error("Le template HTML doit être une chaîne de caractères");
-//         }
-
-//         // 4. Remplacement des variables
-//         const htmlContent = template
-//             .replace(/{{DATE_RENDEZVOUS}}/g, date)
-//             .replace(/{{SERVICE}}/g, services);
-
-//         // 5. Configuration de l'email
-//         const mailOptions = {
-//             from: `Garage ${fromEmail}`,
-//             to: toEmail,
-//             subject: "Confirmation de votre rendez-vous - Garage",
-//             html: htmlContent,
-//             attachments: [
-//                 {
-//                     filename: "devis.pdf",
-//                     path: pdfPath,
-//                     contentType: "application/pdf"
-//                 }
-//             ]
-//         };
-
-//         // 6. Envoi de l'email
-//         const info = await transporter.sendMail(mailOptions);
-//         console.log("📩 Email envoyé avec succès:", info.messageId);
-
-//         // 7. Nettoyage
-//         try {
-//             await fs.unlink(pdfPath);
-//             console.log("✅ Fichier PDF supprimé");
-//         } catch (unlinkError) {
-//             console.error("⚠️ Erreur de suppression PDF:", unlinkError);
-//         }
-
-//         return info.messageId;
-
-//     } catch (error) {
-//         console.error("❌ Erreur critique:", error);
-        
-//         // Nettoyage en cas d'erreur
-//         if (pdfPath) {
-//             try {
-//                 await fs.unlink(pdfPath);
-//             } catch (cleanupError) {
-//                 console.error("Échec du nettoyage:", cleanupError);
-//             }
-//         }
-        
-//         throw error; // Propager l'erreur originale
-//     }
-// }
 
 async function sendMailUsingTemplate(auth_generique, toEmail, fromEmail, date, services,totalPrix,totalDuree) {
-    let pdfPath;
     try {
         // 1. Configuration du transporteur SMTP
         const transporter = nodemailer.createTransport({
@@ -117,8 +43,8 @@ async function sendMailUsingTemplate(auth_generique, toEmail, fromEmail, date, s
         });
 
         // 2. Génération du PDF
-        pdfPath = await generateDevisPDF(date, services,totalPrix,totalDuree);
-        if (!pdfPath) throw new Error("Échec de la génération du PDF");
+        const pdfBuffer = await generateDevisPDF(date, services, totalPrix, totalDuree);
+        if (!pdfBuffer) throw new Error("Échec de la génération du PDF");
 
         // 3. Récupération et validation du template
         let template =getandCompleteHTML(date, services);
@@ -142,7 +68,7 @@ async function sendMailUsingTemplate(auth_generique, toEmail, fromEmail, date, s
             attachments: [
                 {
                     filename: "devis.pdf",
-                    path: pdfPath,
+                    content: pdfBuffer, 
                     contentType: "application/pdf"
                 }
             ]
@@ -152,39 +78,24 @@ async function sendMailUsingTemplate(auth_generique, toEmail, fromEmail, date, s
         const info = await transporter.sendMail(mailOptions);
         console.log("📩 Email envoyé avec succès:", info.messageId);
 
-        // 7. Nettoyage
-        try {
-            await fs.unlink(pdfPath);
-            console.log("✅ Fichier PDF supprimé");
-        } catch (unlinkError) {
-            console.error("⚠️ Erreur de suppression PDF:", unlinkError);
-        }
-
         return info.messageId;
 
     } catch (error) {
         console.error("❌ Erreur critique:", error);
-        
-        // Nettoyage en cas d'erreur
-        if (pdfPath) {
-            try {
-                await fs.unlink(pdfPath);
-            } catch (cleanupError) {
-                console.error("Échec du nettoyage:", cleanupError);
-            }
-        }
-        
-        throw error; // Propager l'erreur originale
+                throw error; // Propager l'erreur originale
     }
 }
+
+
 async function generateDevisPDF(date, services, totalPrix, totalDuree) {
     return new Promise((resolve, reject) => {
         try {
             const doc = new PDFDocument();
-            const pdfPath = path.join(__dirname, `devis_${Date.now()}.pdf`);
-            const stream = fs.createWriteStream(pdfPath);
-            
-            doc.pipe(stream);
+            let pdfBuffer = [];
+
+            // Pipe to an in-memory buffer
+            doc.on('data', chunk => pdfBuffer.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(pdfBuffer)));
 
             // En-tête du devis
             doc.fontSize(20).text("Devis de Rendez-vous", { align: "center" });
@@ -210,9 +121,6 @@ async function generateDevisPDF(date, services, totalPrix, totalDuree) {
             doc.fontSize(12).text(`Durée totale : ${totalDuree} min`);
 
             doc.end();
-
-            stream.on("finish", () => resolve(pdfPath));
-            stream.on("error", reject);
         } catch (error) {
             reject(error);
         }
