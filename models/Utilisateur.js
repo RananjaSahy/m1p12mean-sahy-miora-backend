@@ -28,5 +28,5 @@ UtilisateurSchema.pre('save', async function (next) {
     return await bcrypt.compare(enteredPassword, this.mdp);
   };
 
-module.exports = mongoose.model('Utilisateur', UtilisateurSchema);
+module.exports = mongoose.models.Utilisateurs || mongoose.model('Utilisateur', UtilisateurSchema);
    

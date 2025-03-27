@@ -3,7 +3,7 @@ const router = express.Router();
 const Utilisateur = require('../models/Utilisateur');
 const authMiddleware = require('../middlewares/authMiddleware');
 const Vehicule = require('../models/Vehicule');
-
+const Service = require('../models/Service');
 // 📌 Route protégée : Récupérer le profil de l'utilisateur connecté
 router.get('/me', authMiddleware(['client','mecanicien','manager']), async (req, res) => {
     try {
@@ -65,5 +65,26 @@ router.get("/mecaniciens", authMiddleware(['manager']), async(req, res) => {
         console.log(error.message);
     }
 });
+
+router.get('/services/:vehiculeId', authMiddleware(['client']), async (req, res) => {
+    try {
+        const vehiculeId = req.params.vehiculeId;
+
+        // Récupérer le type de véhicule associé au véhicule sélectionné
+        const vehicule = await Vehicule.findById(vehiculeId);
+        if (!vehicule) {
+            return res.status(404).json({ message: "Véhicule non trouvé." });
+        }
+
+        // Récupérer les services compatibles avec ce type de véhicule
+        const services = await Service.find({ 'historique.typevehicule': vehicule.typevehicule });
+
+        res.status(200).json(services);
+    } catch (error) {
+        console.log(error.message);
+        res.status(500).json({ message: error.message });
+    }
+});
+
 
 module.exports = router;
