@@ -60,7 +60,7 @@ router.get('/', authMiddleware(['client', 'manager', 'mecanicien']), async (req,
                 let latestHistory = {};
 
                 service.historique.forEach(entry => {
-                    if (!entry.etat) return; // 🔴 Ignorer les historiques inactifs
+                    if (!entry.etat) return; // Ignorer les historiques inactifs
 
                     const typeId = entry.typevehicule._id.toString();
                     if (!latestHistory[typeId] || new Date(entry.date) > new Date(latestHistory[typeId].date)) {
@@ -123,16 +123,26 @@ router.get('/search', authMiddleware(['client', 'manager', 'mecanicien']), async
 
         let filter = {};
 
-        // Filtrer par nom du service
-        if (service) {
-            filter.nom = { $regex: service, $options: 'i' }; // Recherche insensible à la casse
+        // Filtrer par nom du service et description
+        if(service){
+            filter.$or = [
+                { nom: { $regex: service, $options: 'i' } },
+                { description: { $regex: service, $options: 'i' } }
+            ];
         }
-
         // Filtrer par type de véhicule
-        if (typevehicule) {
-            filter['historique.typevehicule'] = typevehicule;
+        if(typevehicule){
+            if(role === 'client'){
+                filter['historique'] = {
+                    $elemMatch: {
+                        typevehicule: typevehicule,
+                        etat: true 
+                    }
+                };
+            }else{
+                filter['historique.typevehicule'] = typevehicule;
+            }
         }
-
         // Filtrer par plage de prix
         if (prixMin || prixMax) {
             filter['historique.prix'] = {};
@@ -145,7 +155,7 @@ router.get('/search', authMiddleware(['client', 'manager', 'mecanicien']), async
         }
 
         let totalServices = await Service.countDocuments(filter);
-
+        console.log(filter);
         let services = await Service.find(filter)
             .populate('historique.typevehicule')
             .skip((page - 1) * limit)
@@ -197,6 +207,20 @@ router.patch('/:id/desactiver', authMiddleware(['manager']), async (req, res) =>
     try {
         const { id } = req.params;
         const service = await Service.findByIdAndUpdate(id, { etat: false }, { new: true });
+
+        if (!service) {
+            return res.status(404).json({ message: "Service non trouvé." });
+        }
+
+        res.json({ message: "Service désactivé avec succès.", service });
+    } catch (error) {
+        res.status(500).json({ message: "Erreur serveur." });
+    }
+});
+router.patch('/:id/activer', authMiddleware(['manager']), async (req, res) => {
+    try {
+        const { id } = req.params;
+        const service = await Service.findByIdAndUpdate(id, { etat: true }, { new: true });
 
         if (!service) {
             return res.status(404).json({ message: "Service non trouvé." });
@@ -375,30 +399,66 @@ router.delete('/:id', authMiddleware(['manager']), async (req, res) => {
     }
 });
 
+// router.post('/:id/historique', authMiddleware(['manager']), async (req, res) => {
+//     try {
+//         const { date, prix, duree, typevehicule } = req.body;
+        
+//         const service = await Service.findById(req.params.id);
+//         if (!service) return res.status(404).json({ message: "Service non trouvé" });
+
+//         // ,etat:true
+//         service.historique.push({ 
+//             date: date || new Date(), 
+//             prix, 
+//             duree, 
+//             typevehicule,
+//             etat: true // Ajoutez cette ligne pour correspondre au modèle
+//           });
+//         await service.save();
+
+//         res.json(service);
+//     } catch (error) {
+//         console.log(error);
+//         res.status(500).json({ message: error.message });
+//     }
+// });
+
+
 router.post('/:id/historique', authMiddleware(['manager']), async (req, res) => {
     try {
-        console.log("mba tonga atooo");
         const { date, prix, duree, typevehicule } = req.body;
-        
-        const service = await Service.findById(req.params.id);
+        const serviceId = req.params.id;
+
+        // Vérifier si le service existe
+        const service = await Service.findById(serviceId);
         if (!service) return res.status(404).json({ message: "Service non trouvé" });
 
-        // ,etat:true
-        service.historique.push({ 
-            date: date || new Date(), 
-            prix, 
-            duree, 
+        // Mettre à jour tous les historiques du même typevehicule en base de données
+        await Service.updateOne(
+            { _id: serviceId, "historique.typevehicule": typevehicule },
+            { $set: { "historique.$[elem].etat": false } },
+            { arrayFilters: [{ "elem.typevehicule": typevehicule }] }
+        );
+
+        // Ajouter le nouvel historique avec `etat: true`
+        service.historique.push({
+            date: date || new Date(),
+            prix,
+            duree,
             typevehicule,
-            etat: true // Ajoutez cette ligne pour correspondre au modèle
-          });
+            etat: true
+        });
+
+        // Sauvegarder la mise à jour
         await service.save();
 
         res.json(service);
     } catch (error) {
-        console.log(error);
+        console.error("Erreur :", error);
         res.status(500).json({ message: error.message });
     }
 });
+
 
 router.post('/filtre-par-types', async (req, res) => {
     try {
