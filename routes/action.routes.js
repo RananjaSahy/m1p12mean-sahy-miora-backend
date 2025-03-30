@@ -1,6 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const Action = require('./models/Action'); // Assurez-vous que le chemin est correct
+const Action = require('../models/Action');
 
 const router = express.Router();
 router.post('/', async (req, res) => {
