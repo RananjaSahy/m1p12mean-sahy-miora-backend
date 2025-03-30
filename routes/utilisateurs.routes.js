@@ -4,6 +4,7 @@ const Utilisateur = require('../models/Utilisateur');
 const authMiddleware = require('../middlewares/authMiddleware');
 const Vehicule = require('../models/Vehicule');
 const Service = require('../models/Service');
+const Action = require('../models/Action');
 // 📌 Route protégée : Récupérer le profil de l'utilisateur connecté
 router.get('/me', authMiddleware(['client','mecanicien','manager']), async (req, res) => {
     try {
@@ -37,6 +38,26 @@ router.get('/mesvehicules', authMiddleware(['client']), async(req,res) => {
 
         const mesvehicules = await query;
         res.status(200).json({mesvehicules, total: totalVehicule});
+    }catch(error){
+        res.status(500).json({ message: error.message });
+    }
+});
+
+router.get('/mesactions', authMiddleware(['client']), async(req,res) => {
+    try{
+        const userId = req.user.id; 
+
+       const vehicules = await Vehicule.find({ utilisateur: userId }).select('_id');
+
+       const vehiculeIds = vehicules.map(vehicule => vehicule._id);
+
+       const mesactions = await Action.find({ vehicule: { $in: vehiculeIds } })
+           .populate('service')
+           .populate('vehicule')
+           .populate('responsables')
+           .populate('depend_de')
+           .populate('rendezVous')
+           .sort({ createdAt: -1 });
     }catch(error){
         res.status(500).json({ message: error.message });
     }
