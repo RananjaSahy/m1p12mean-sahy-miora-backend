@@ -46,7 +46,9 @@ router.post('/register-mecanicien',authMiddleware(['manager']), [
     body('prenom').notEmpty().withMessage('Le prenom est requis'),
 ], async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    console.log("erreurs = ");
+    console.log(errors.array());
+    if (!errors.isEmpty()) return res.status(500).json({ errors: errors.array() });
 
     try {
         const { email, mdp, nom, prenom } = req.body;

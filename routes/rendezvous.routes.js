@@ -7,6 +7,7 @@ const nodemailer = require('nodemailer');
 const Service = require('../models/Service');
 const Mail = require('../models/Mail');
 const Vehicule = require('../models/Vehicule');
+const utlisateur = require('../models/Utilisateur');
 require('dotenv').config();
 // mail 
 const { MailerSend, EmailParams, Recipient } = require("mailersend");
@@ -17,6 +18,7 @@ async function validerRendezvous(date, vehicule, services) {
 
     // Vérifier si la date est dans le futur
     const now = new Date();
+    console.log(formattedDate+"   "+now)
     if (formattedDate < now) {
         return { valid: false, message: "La date sélectionnée doit être dans le futur." };
     }
@@ -74,51 +76,6 @@ router.post('/ajouter', authMiddleware(['client']), async (req, res) => {
     }
 });
 
-// router.post('/comfirmer', authMiddleware(['client']), async (req, res) => {
-//     try {
-//         const utilisateur = req.user.id; // ID de l'utilisateur extrait du token
-//         const { date, vehicule, services, commentaire } = req.body;
-
-//         // Vérifier si l'ID du véhicule est valide
-//         if (!mongoose.Types.ObjectId.isValid(vehicule)) {
-//             return res.status(400).json({ message: "ID du véhicule invalide." });
-//         }
-//         const servicesValides = services.filter(s => mongoose.Types.ObjectId.isValid(s));
-
-//         // Vérifier et formater la date correctement
-//         const formattedDate = new Date(date);
-//         if (isNaN(formattedDate.getTime())) {
-//             return res.status(400).json({ message: "Date invalide." });
-//         }
-//         const devis = await calculDevis(date,vehicule,services);
-//         // Validation complète avant insertion
-//         const validation = await validerRendezvous(formattedDate, vehicule, servicesValides);
-//         if (!validation.valid) {
-//             return res.status(400).json({ message: validation.message });
-//         }
-
-//         // Enregistrement du rendez-vous
-//         const nouveauRendezvous = new Rendezvous({
-//             date: formattedDate,
-//             utilisateur,
-//             vehicule,
-//             services: servicesValides,
-//             commentaire
-//         });
-
-//         await nouveauRendezvous.save();
-//         const servicesNoms = await Service.find({ _id: { $in: servicesValides } }).lean();
-//         const servicesConcat = servicesNoms.map(s => s.nom).join(', ');
-//         await  sendMailUsingTemplate(formattedDate,servicesConcat);
-
-//         res.status(201).json({ message: "Rendez-vous enregistré avec succès !", prix: devis });
-//     } catch (error) {
-//         console.log("Erreur backend :", error);
-//         res.status(500).json({ msg: "Erreur serveur." });
-//     }
-// });
-
-
 router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
     try {
         const utilisateur = req.user.id; // ID de l'utilisateur extrait du token
@@ -129,16 +86,32 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
             return res.status(400).json({ message: "ID du véhicule invalide." });
         }
 
-        const servicesValides = await Service.find({ _id: { $in: services } })
+        // Récupérer le véhicule pour obtenir son type
+        const vehiculeDoc = await Vehicule.findById(vehicule).populate('typevehicule');
+        if (!vehiculeDoc || !vehiculeDoc.typevehicule) {
+            return res.status(400).json({ message: "Véhicule ou type de véhicule introuvable." });
+        }
+        const typeVehiculeId = vehiculeDoc.typevehicule._id.toString();
+
+        // Filtrer uniquement les ObjectId valides pour éviter les erreurs de requête
+        const servicesFiltres = services.filter(s => mongoose.Types.ObjectId.isValid(s));
+
+        if (servicesFiltres.length === 0) {
+            return res.status(400).json({ message: "Aucun service valide fourni." });
+        }
+
+        console.log("Services reçus après filtrage:", servicesFiltres);
+        const servicesValides = await Service.find({ _id: { $in: servicesFiltres } })
             .populate('historique.typevehicule')
             .lean();
+        console.log("Services valides récupérés:", servicesValides);
 
         const formattedDate = new Date(date);
         if (isNaN(formattedDate.getTime())) {
             return res.status(400).json({ message: "Date invalide." });
         }
 
-        const validation = await validerRendezvous(formattedDate, vehicule, services);
+        const validation = await validerRendezvous(formattedDate, vehicule, servicesFiltres);
         if (!validation.valid) {
             return res.status(400).json({ message: validation.message });
         }
@@ -148,10 +121,11 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
         const servicesRendezVous = [];
 
         servicesValides.forEach(service => {
-            // Trouver l'historique correspondant au type de véhicule et actif
+            console.log(`Service: ${service.nom}, Historique:`, service.historique);
+
             const historiqueFiltre = service.historique
-                .filter(h => h.etat && h.typevehicule && h.typevehicule._id.toString() === vehicule)
-                .sort((a, b) => new Date(b.date) - new Date(a.date))[0]; // Prendre le plus récent
+                .filter(h => h.etat && h.typevehicule && h.typevehicule._id.toString() === typeVehiculeId)
+                .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
 
             if (historiqueFiltre) {
                 servicesRendezVous.push({
@@ -161,8 +135,14 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
                 });
                 totalPrix += historiqueFiltre.prix;
                 totalDuree += historiqueFiltre.duree;
+            } else {
+                console.warn(`❌ Aucun historique valide pour ${service.nom}`);
             }
         });
+
+        if (servicesRendezVous.length === 0) {
+            return res.status(400).json({ message: "Aucun service valide trouvé." });
+        }
 
         const nouveauRendezvous = new Rendezvous({
             date: formattedDate,
@@ -173,71 +153,59 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
         });
 
         await nouveauRendezvous.save();
-        console.log(" ============= " +email);
-        // Générer le PDF avec les prix estimés
-        // const pdfPath = await generateDevisPDF(formattedDate, servicesRendezVous, totalPrix, totalDuree);
-            await sendMailUsingTemplate(formattedDate,servicesRendezVous,totalPrix,totalDuree,email);
+
+        console.log("Rendez-vous enregistré:", nouveauRendezvous);
+        console.log("Email à envoyer:", email);
+
+        await sendMailUsingTemplate(formattedDate, servicesRendezVous, totalPrix, totalDuree, email);
+
         res.status(201).json({ 
             message: "Rendez-vous enregistré avec succès !", 
             prixTotal: totalPrix,
             dureeTotale: totalDuree
         });
-
     } catch (error) {
-        console.log("Erreur backend :", error);
+        console.error("Erreur backend:", error);
         res.status(500).json({ msg: "Erreur serveur." });
     }
 });
 
 
-// router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
-//     try {
-//         const utilisateurId = req.user.id;
-
-//         const rendezvous = await Rendezvous.find({ utilisateur: utilisateurId })
-//             .populate('vehicule')
-//             .populate('services');
-
-//         res.status(200).json(rendezvous);
-//     } catch (error) {
-//         console.error("Erreur lors de la récupération des rendez-vous :", error);
-//         res.status(500).json({ msg: "Erreur serveur." });
-//     }
-// });
-
 router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
     try {
         const utilisateurId = req.user.id;
 
-        // Récupérer les rendez-vous avec les services et le véhicule associé
         const rendezvous = await Rendezvous.find({ utilisateur: utilisateurId })
             .populate({
                 path: 'vehicule',
                 select: 'libelle typevehicule' // On récupère le type du véhicule
             })
             .populate({
-                path: 'services',
-                select: 'nom description historique' // On récupère l'historique des prix
+                path: 'services.service', // Populate sur le champ service à l'intérieur du tableau services
+                select: 'nom description' // Sélectionne les champs du service
             });
+
 
         // Formatter les données pour ajouter prix et durée estimés
         const formattedRendezvous = rendezvous.map(rdv => {
-            const servicesFormatted = rdv.services.map(service => {
-                // Vérifie que service.historique est bien défini avant d'utiliser find()
-                const historiqueValide = service.historique?.find(hist =>
+            const servicesFormatted = rdv.services.map(s => {
+                // Vérifie que `s.service` est bien défini (après populate)
+                const serviceData = s.service || {}; 
+        
+                // Vérifie que `serviceData.historique` est bien défini avant d'utiliser find()
+                const historiqueValide = serviceData.historique?.find(hist =>
                     hist.typevehicule.equals(rdv.vehicule.typevehicule) && hist.etat
                 );
-            
+        
                 return {
-                    _id: service._id,
-                    nom: service.nom,
-                    description: service.description,
-                    prixEstime: historiqueValide ? historiqueValide.prix : null,
-                    dureeEstimee: historiqueValide ? historiqueValide.duree : null
+                    _id: serviceData._id,
+                    nom: serviceData.nom || 'Nom inconnu',
+                    description: serviceData.description || 'Pas de description',
+                    prixEstime: historiqueValide ? historiqueValide.prix : s.prixEstime || null,
+                    dureeEstimee: historiqueValide ? historiqueValide.duree : s.dureeEstimee || null
                 };
             });
-            
-
+        
             return {
                 _id: rdv._id,
                 date: rdv.date,
@@ -246,7 +214,7 @@ router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
                 commentaire: rdv.commentaire
             };
         });
-
+        console.log(JSON.stringify(formattedRendezvous,null,2) );
         res.status(200).json(formattedRendezvous);
     } catch (error) {
         console.error("Erreur lors de la récupération des rendez-vous :", error);
@@ -351,4 +319,123 @@ router.get('/mail', async (req, res) => {
         res.status(500).send("Error sending email");
     }
 });
+
+router.get('/', authMiddleware(['manager']), async (req, res) => {
+    try {
+        let { dateMin, dateMax, heureMin, heureMax, typevehicule, service, nomUtilisateur, page = 1, limit = 10 } = req.query;
+        
+        let filter = {};
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Filtrer par date
+        if (dateMin || dateMax) {
+            filter.date = {};
+            if (dateMin) filter.date.$gte = new Date(dateMin);
+            if (dateMax) filter.date.$lte = new Date(dateMax);
+        } else {
+            filter.date = { $gte: today };
+        }
+
+        // Filtrer par heure
+        if (heureMin || heureMax) {
+            filter.$expr = {
+                $and: []
+            };
+            if (heureMin) {
+                filter.$expr.$and.push({
+                    $gte: [{ $hour: "$date" }, parseInt(heureMin.split(":")[0])]
+                });
+            }
+            if (heureMax) {
+                filter.$expr.$and.push({
+                    $lte: [{ $hour: "$date" }, parseInt(heureMax.split(":")[0])]
+                });
+            }
+        }
+
+        // Filtrer par Type de Véhicule
+        if (typevehicule) {
+            filter['vehicule.typevehicule'] = mongoose.Types.ObjectId(typevehicule);
+        }
+
+        // Filtrer par Service (Un seul service)
+        if (service) {
+            filter['services.service'] = mongoose.Types.ObjectId(service);
+        }
+
+        // Filtrer par Nom d’Utilisateur
+        if (nomUtilisateur) {
+            const users = await Utilisateur.find({
+                $or: [
+                    { nom: { $regex: nomUtilisateur, $options: 'i' } },
+                    { prenom: { $regex: nomUtilisateur, $options: 'i' } }
+                ]
+            }, '_id');
+
+            const userIds = users.map(user => user._id);
+            filter.utilisateur = { $in: userIds };
+        }
+
+        // Pagination
+        const pageNumber = parseInt(page);
+        const pageSize = parseInt(limit);
+        const skip = (pageNumber - 1) * pageSize;
+
+        // Récupération des rendez-vous
+        const totalCount = await Rendezvous.countDocuments(filter);
+        const totalPages = Math.ceil(totalCount / pageSize);
+        console.log("Filtres de la requête:", filter);
+        const rendezVous = await Rendezvous.find(filter)
+            .populate({
+                path: 'utilisateur',
+                select: 'nom prenom'
+            })
+            .populate({
+                path: 'vehicule',
+                select: 'libelle typevehicule',
+                populate: { path: 'typevehicule', select: 'nom' }
+            })
+            .populate({
+                path: 'services.service',
+                select: 'nom description historique',
+                populate: { path: 'historique.typevehicule', select: 'nom' }
+            })
+            .skip(skip)
+            .limit(pageSize);
+
+        // Formatter les services avec historique adapté au type de véhicule
+        const formattedRendezvous = rendezVous.map(rdv => {
+            const servicesFormatted = rdv.services.map(serviceData => {
+                const service = serviceData.service;
+                const historiqueValide = service.historique?.find(hist =>
+                    hist.typevehicule.equals(rdv.vehicule.typevehicule) && hist.etat
+                );
+
+                return {
+                    _id: service._id,
+                    nom: service.nom,
+                    description: service.description,
+                    prixEstime: historiqueValide ? historiqueValide.prix : null,
+                    dureeEstimee: historiqueValide ? historiqueValide.duree : null
+                };
+            });
+
+            return {
+                _id: rdv._id,
+                date: rdv.date,
+                utilisateur: rdv.utilisateur,
+                vehicule: rdv.vehicule,
+                services: servicesFormatted,
+                commentaire: rdv.commentaire
+            };
+        });
+
+        res.status(200).json({ totalPages, currentPage: pageNumber, data: formattedRendezvous });
+    } catch (error) {
+        console.error("Erreur backend :", error);
+        res.status(500).json({ msg: "Erreur serveur", error });
+    }
+});
+
 module.exports = router;

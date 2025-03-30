@@ -77,8 +77,16 @@ router.get('/services/:vehiculeId', authMiddleware(['client']), async (req, res)
         }
 
         // Récupérer les services compatibles avec ce type de véhicule
-        const services = await Service.find({ 'historique.typevehicule': vehicule.typevehicule });
-
+        const services = await Service.find({
+            etat:true,
+            historique: { 
+                $elemMatch: { 
+                    typevehicule: vehicule.typevehicule, 
+                    etat: true 
+                } 
+            }
+        });             
+        console.log("services = ",services)
         res.status(200).json(services);
     } catch (error) {
         console.log(error.message);
