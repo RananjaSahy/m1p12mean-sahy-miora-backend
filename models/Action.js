@@ -34,6 +34,18 @@ const ActionSchema = new mongoose.Schema({
            next(error);
        }
    });
+    // Champ virtuel pour récupérer le dernier statut
+    ActionSchema.virtual('statutActuel', {
+        ref: 'Statut',
+        localField: '_id',
+        foreignField: 'action',
+        justOne: true, // On veut un seul statut (le dernier)
+        options: { sort: { createdAt: -1 } } // Trier par date de création DESC
+    });
+
+    // Activer les champs virtuels dans JSON et Objet
+    ActionSchema.set('toJSON', { virtuals: true });
+    ActionSchema.set('toObject', { virtuals: true });
 
 module.exports = mongoose.model('Action', ActionSchema);
 
