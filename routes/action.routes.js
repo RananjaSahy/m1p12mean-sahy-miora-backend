@@ -3,7 +3,9 @@ const mongoose = require('mongoose');
 const Action = require('../models/Action');
 const authMiddleware = require('../middlewares/authMiddleware');
 const Statut = require('../models/Statut');
+
 const { getMecanicienOccupation } = require('../controllers/action.controller');
+
 const router = express.Router();
 router.post('/', authMiddleware(['client','mecanicien','manager']), async (req, res) => {
     try {
@@ -17,6 +19,7 @@ router.post('/', authMiddleware(['client','mecanicien','manager']), async (req, 
         res.status(400).json({ error: error.message });
     }
 });
+
 
 router.get('/', async (req, res) => {
     try {
@@ -73,7 +76,6 @@ router.get('/:id/statut', authMiddleware(['manager','mecanicien', 'client']), as
         res.status(500).json({ error: error.message });
     }
 });
-
 // Mettre à jour une action (ajout de responsables et modification d'état)
 router.put('/:id', authMiddleware(['client','mecanicien','manager']),  async (req, res) => {
     try {
@@ -104,6 +106,4 @@ router.put('/:id', authMiddleware(['client','mecanicien','manager']),  async (re
 
 router.get('/taux-occupation', getMecanicienOccupation);
 module.exports = router;
-
-
 
