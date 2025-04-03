@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Action = require('../models/Action');
 const authMiddleware = require('../middlewares/authMiddleware');
 const Statut = require('../models/Statut');
+const constantes = require('../config/variable.json');
 
 const { getMecanicienOccupation } = require('../controllers/action.controller');
 
@@ -56,6 +57,101 @@ router.get('/rendezvous/:id', async (req, res) => {
         res.status(200).json(actions);
     } catch (error) {
         res.status(500).json({ message: "Erreur lors de la récupération des actions", error });
+    }
+});
+router.patch('/:id/encours', authMiddleware(['mecanicien']), async (req, res) => {
+    try{
+        const { id } = req.params;
+
+        const dernierStatut = await Statut.findOne({ action: id })
+            .sort({ createdAt: -1 }) 
+            .populate('utilisateur', 'nom prenom email');
+
+        if (!dernierStatut) {
+            return res.status(404).json({ message: "Aucun statut trouvé pour cette action" });
+        }
+
+        if(dernierStatut.etat !== constantes.etatstatut.plannifie){
+            return res.status(400).json({ error : "Seule une action plannifée peut être activé"});
+        } else {
+            const statut = new Statut({
+                action : id,
+                utilisateur : req.user.id,
+                etat : constantes.etatstatut.encours
+            });
+            await statut.save();
+
+            res.json({ message: "Action : statut en cours avec succès.", statut });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.patch('/:id/terminer', authMiddleware(['mecanicien']), async (req, res) => {
+    try{
+        const { id } = req.params;
+
+        const dernierStatut = await Statut.findOne({ action: id })
+            .sort({ createdAt: -1 }) 
+            .populate('utilisateur', 'nom prenom email');
+
+        if (!dernierStatut) {
+            return res.status(404).json({ message: "Aucun statut trouvé pour cette action" });
+        }
+
+        if(dernierStatut.etat !== constantes.etatstatut.encours){
+            return res.status(400).json({ error : "Seule une action en cours peut être terminée"});
+        } else {
+            const statut = new Statut({
+                action : id,
+                utilisateur : req.user.id,
+                etat : constantes.etatstatut.termine
+            });
+            await statut.save();
+
+            res.json({ message: "Action : terminer action avec succès.", statut });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.patch('/:id/annuler', authMiddleware(['mecanicien', 'client', 'manager']), async (req, res) => {
+    try{
+        const { id } = req.params;
+
+        if(req.user.role === 'client'){
+            const action = Action.findById(id);
+            if(action.vehicule.utilisateur != req.user.id){
+                return res.status(401).json({ message: "Accès refusé" });
+            }
+        }
+        const dernierStatut = await Statut.findOne({ action: id })
+            .sort({ createdAt: -1 }) 
+            .populate('utilisateur', 'nom prenom email');
+
+        if (!dernierStatut) {
+            return res.status(404).json({ message: "Aucun statut trouvé pour cette action" });
+        }
+
+        if(dernierStatut.etat >= constantes.etatstatut.termine){
+            return res.status(400).json({ error : "Cette action ne peut plus être annulée"});
+        } else {
+            const statut = new Statut({
+                action : id,
+                utilisateur : req.user.id,
+                etat : constantes.etatstatut.annule
+            });
+            await statut.save();
+
+            res.json({ message: "Action : annuler action avec succès.", statut });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
     }
 });
 
