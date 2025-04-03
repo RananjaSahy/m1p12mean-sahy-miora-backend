@@ -7,6 +7,7 @@ const nodemailer = require('nodemailer');
 const Service = require('../models/Service');
 const Mail = require('../models/Mail');
 const Vehicule = require('../models/Vehicule');
+const Utilisateur = require('../models/Utilisateur');
 require('dotenv').config();
 // mail 
 const { MailerSend, EmailParams, Recipient } = require("mailersend");
@@ -74,54 +75,9 @@ router.post('/ajouter', authMiddleware(['client']), async (req, res) => {
     }
 });
 
-// router.post('/comfirmer', authMiddleware(['client']), async (req, res) => {
-//     try {
-//         const utilisateur = req.user.id; // ID de l'utilisateur extrait du token
-//         const { date, vehicule, services, commentaire } = req.body;
-
-//         // Vérifier si l'ID du véhicule est valide
-//         if (!mongoose.Types.ObjectId.isValid(vehicule)) {
-//             return res.status(400).json({ message: "ID du véhicule invalide." });
-//         }
-//         const servicesValides = services.filter(s => mongoose.Types.ObjectId.isValid(s));
-
-//         // Vérifier et formater la date correctement
-//         const formattedDate = new Date(date);
-//         if (isNaN(formattedDate.getTime())) {
-//             return res.status(400).json({ message: "Date invalide." });
-//         }
-//         const devis = await calculDevis(date,vehicule,services);
-//         // Validation complète avant insertion
-//         const validation = await validerRendezvous(formattedDate, vehicule, servicesValides);
-//         if (!validation.valid) {
-//             return res.status(400).json({ message: validation.message });
-//         }
-
-//         // Enregistrement du rendez-vous
-//         const nouveauRendezvous = new Rendezvous({
-//             date: formattedDate,
-//             utilisateur,
-//             vehicule,
-//             services: servicesValides,
-//             commentaire
-//         });
-
-//         await nouveauRendezvous.save();
-//         const servicesNoms = await Service.find({ _id: { $in: servicesValides } }).lean();
-//         const servicesConcat = servicesNoms.map(s => s.nom).join(', ');
-//         await  sendMailUsingTemplate(formattedDate,servicesConcat);
-
-//         res.status(201).json({ message: "Rendez-vous enregistré avec succès !", prix: devis });
-//     } catch (error) {
-//         console.log("Erreur backend :", error);
-//         res.status(500).json({ msg: "Erreur serveur." });
-//     }
-// });
-
-
 router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
     try {
-        const utilisateur = req.user.id; // ID de l'utilisateur extrait du token
+        const utilisateur = req.user.id;
         console.log(req.body);
         const { date, vehicule, services, commentaire, email } = req.body;
 
@@ -129,6 +85,14 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
             return res.status(400).json({ message: "ID du véhicule invalide." });
         }
 
+        // 🔹 1. Trouver le véhicule pour récupérer son type
+        const vehiculeInfo = await Vehicule.findById(vehicule).lean();
+        if (!vehiculeInfo || !vehiculeInfo.typevehicule) {
+            return res.status(400).json({ message: "Type de véhicule introuvable." });
+        }
+        const typeVehiculeId = vehiculeInfo.typevehicule.toString();
+
+        // 🔹 2. Charger les services avec leur historique
         const servicesValides = await Service.find({ _id: { $in: services } })
             .populate('historique.typevehicule')
             .lean();
@@ -147,22 +111,31 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
         let totalDuree = 0;
         const servicesRendezVous = [];
 
+        // 🔹 3. Filtrer les historiques avec le bon type de véhicule
         servicesValides.forEach(service => {
-            // Trouver l'historique correspondant au type de véhicule et actif
+            if (!service.historique || service.historique.length === 0) return;
+
             const historiqueFiltre = service.historique
-                .filter(h => h.etat && h.typevehicule && h.typevehicule._id.toString() === vehicule)
+                .filter(h => h.etat && h.typevehicule && h.typevehicule._id.toString() === typeVehiculeId)
                 .sort((a, b) => new Date(b.date) - new Date(a.date))[0]; // Prendre le plus récent
 
-            if (historiqueFiltre) {
+            if (historiqueFiltre && historiqueFiltre.prix && historiqueFiltre.duree) {
                 servicesRendezVous.push({
                     service: service._id,
                     prixEstime: historiqueFiltre.prix,
                     dureeEstimee: historiqueFiltre.duree
                 });
+
                 totalPrix += historiqueFiltre.prix;
                 totalDuree += historiqueFiltre.duree;
+            } else {
+                console.log(`Aucun historique valide trouvé pour le service ${service._id} et le type de véhicule ${typeVehiculeId}`);
             }
         });
+
+        if (servicesRendezVous.length === 0) {
+            return res.status(400).json({ message: "Aucun service valide trouvé pour ce type de véhicule." });
+        }
 
         const nouveauRendezvous = new Rendezvous({
             date: formattedDate,
@@ -173,10 +146,9 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
         });
 
         await nouveauRendezvous.save();
-        console.log(" ============= " +email);
-        // Générer le PDF avec les prix estimés
-        // const pdfPath = await generateDevisPDF(formattedDate, servicesRendezVous, totalPrix, totalDuree);
-            await sendMailUsingTemplate(formattedDate,servicesRendezVous,totalPrix,totalDuree,email);
+        console.log(" ============= " + email);
+        await sendMailUsingTemplate(formattedDate, servicesRendezVous, totalPrix, totalDuree, email);
+        
         res.status(201).json({ 
             message: "Rendez-vous enregistré avec succès !", 
             prixTotal: totalPrix,
@@ -189,21 +161,6 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
     }
 });
 
-
-// router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
-//     try {
-//         const utilisateurId = req.user.id;
-
-//         const rendezvous = await Rendezvous.find({ utilisateur: utilisateurId })
-//             .populate('vehicule')
-//             .populate('services');
-
-//         res.status(200).json(rendezvous);
-//     } catch (error) {
-//         console.error("Erreur lors de la récupération des rendez-vous :", error);
-//         res.status(500).json({ msg: "Erreur serveur." });
-//     }
-// });
 
 router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
     try {
@@ -318,37 +275,117 @@ async function calculDevis(date, vehicule, services) {
     }
 }
 
-
-
-router.get('/mail', async (req, res) => {
+router.get('/', async (req, res) => {
     try {
-        // Configuration du transporteur SMTP
-        const transporter = nodemailer.createTransport({
-            host: 'smtp.mailersend.net',
-            port: 587,
-            secure: false, // true pour le port 465, false pour les autres ports
-            auth: {
-                user: 'MS_CxWqJP@trial-eqvygm0zr8dl0p7w.mlsender.net', // Ton adresse email vérifiée
-                pass: 'mssp.oAkDMyx.0r83ql3j1k0gzw1j.vwCuibS', // Ton API Key
-            },
-        });
+        let filters = {};
+        const now = new Date();
+        now.setHours(0, 0, 0, 0); // Fixe la date du jour à minuit
+        
+        console.log("req.query = ", req.query);
+        console.log("FUSEAU HORAIRE SERVEUR:", Intl.DateTimeFormat().resolvedOptions().timeZone);
+        // if (req.query.dateMin || req.query.dateMax) {
+        //     filters.date = {};
+        //     if (req.query.dateMin) filters.date.$gte = new Date(req.query.dateMin);
+        //     if (req.query.dateMax) filters.date.$lte = new Date(req.query.dateMax);
+        // }    
+        if (req.query.dateMin || req.query.dateMax) {
+            filters.date = {};
+            
+            if (req.query.dateMin) {
+                const dateMin = new Date(req.query.dateMin);
+                dateMin.setUTCHours(0, 0, 0, 0); // Fixer à 00:00 UTC pour inclure toute la journée
+                filters.date.$gte = dateMin;
+            }
+        
+            if (req.query.dateMax) {
+                const dateMax = new Date(req.query.dateMax);
+                dateMax.setUTCHours(23, 59, 59, 999); // Fixer à 23:59 UTC pour inclure toute la journée
+                filters.date.$lte = dateMax;
+            }
+        }               
+        if (req.query.heureMin || req.query.heureMax) {
+            let conditions = [];
+            const timezoneOffset = -new Date().getTimezoneOffset(); // Décalage en minutes (ex: -180 pour UTC+3)
+        
+            if (req.query.heureMin) {
+                const [heureMin, minuteMin] = req.query.heureMin.split(':').map(Number);
+                const totalMin = heureMin * 60 + (minuteMin || 0) - timezoneOffset; // Ajuster en UTC
+                conditions.push({ 
+                    $gte: [ 
+                        { 
+                            $add: [ 
+                                { $multiply: [{ $hour: "$date" }, 60] }, 
+                                { $minute: "$date" } 
+                            ] 
+                        }, 
+                        totalMin
+                    ] 
+                });
+            }
+        
+            if (req.query.heureMax) {
+                const [heureMax, minuteMax] = req.query.heureMax.split(':').map(Number);
+                const totalMax = heureMax * 60 + (minuteMax || 0) - timezoneOffset; // Ajuster en UTC
+                conditions.push({ 
+                    $lte: [ 
+                        { 
+                            $add: [ 
+                                { $multiply: [{ $hour: "$date" }, 60] }, 
+                                { $minute: "$date" } 
+                            ] 
+                        }, 
+                        totalMax
+                    ] 
+                });
+            }
+        
+            if (conditions.length > 0) {
+                if (filters.date) {
+                    filters.$and = [
+                        { date: filters.date },
+                        { $expr: { $and: conditions } }
+                    ];
+                    delete filters.date; // Mettre tout dans `$and`
+                } else {
+                    filters.$expr = { $and: conditions };
+                }
+            }
+        }
+        
+        if (req.query.typevehicule) {
+            filters['vehicule.type'] = req.query.typevehicule;
+        }
 
-        // Configuration de l'email
-        const mailOptions = {
-            from: 'MeanAppli <MS_CxWqJP@trial-eqvygm0zr8dl0p7w.mlsender.net>', // Expéditeur
-            to: 'voninolivam@gmail.com', // Destinataire
-            subject: 'Subject', // Sujet
-            text: 'Greetings from the team, you got this message through MailerSend.', // Texte brut
-            html: 'Greetings from the team, you got this message through MailerSend.', // HTML
-        };
+        if (req.query.nomUtilisateur) {
+            const utilisateur = await Utilisateur.findOne({ nom: req.query.nomUtilisateur });
+            if (utilisateur) {
+                filters.utilisateur = utilisateur._id;
+            }
+        }
 
-        // Envoi de l'email
-        const info = await transporter.sendMail(mailOptions);
-        console.log("Email sent successfully:", info.messageId);
-        res.status(200).send("Email sent successfully!");
+        if (req.query.service) {
+            filters['services.service'] = req.query.service;
+        }
+
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        // console.log("Final filters before query:", JSON.stringify(filters, null, 2));
+
+        const rendezvousList = await Rendezvous.find(filters)
+            .populate('utilisateur', 'nom prenom')
+            .populate('vehicule')
+            .populate('services.service')
+            .skip(skip)
+            .limit(limit);
+
+        res.json({ success: true, data: rendezvousList });
     } catch (error) {
-        console.error("Error sending email:", error);
-        res.status(500).send("Error sending email");
+        console.error("Erreur lors de la récupération des rendez-vous:", error);
+        res.status(500).json({ success: false, message: "Erreur serveur" });
     }
 });
+
+
 module.exports = router;
