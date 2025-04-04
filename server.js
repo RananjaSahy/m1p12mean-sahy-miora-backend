@@ -21,6 +21,8 @@ app.use('/authstaff', require('./routes/staffAuth.routes'));
 app.use('/typevehicules', require('./routes/typevehicule.routes'));
 app.use('/vehicules', require('./routes/vehicule.routes'));
 app.use('/rendezvous', require('./routes/rendezvous.routes'));
+app.use('/rendezvousm', require('./routes/rendezvous.routes'));
+app.use('/action', require('./routes/action.routes'));
 app.listen(PORT, () => console.log(`Serveur démarré sur le port
 ${PORT}`));
 

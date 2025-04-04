@@ -1,0 +1,8 @@
+{
+    "etatstatut":{
+        "annule" : -1,
+        "plannifie" : 1,
+        "encours" : 5,
+        "termine" : 10 
+    }
+}

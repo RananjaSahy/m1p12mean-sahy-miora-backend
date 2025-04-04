@@ -16,7 +16,6 @@ function getandCompleteHTML(){
       <p style="font-size: 16px;">Date : <strong>{{DATE_RENDEZVOUS}}</strong</p>
       <p style="font-size: 16px;">Service : <strong>{{SERVICE}}</strong></p>
   </div>
-  <p>Le devis approximatif est en pièce jointe.</p>
   <p>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Restant à votre disposition.</p>
   <p> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Cordialement , </p>
   <p>🚗 <strong>M1p12mean-Sahy-Miora </strong> – Votre garage de confiance.</p>
@@ -43,8 +42,8 @@ async function sendMailUsingTemplate(auth_generique, toEmail, fromEmail, date, s
         });
 
         // 2. Génération du PDF
-        const pdfBuffer = await generateDevisPDF(date, services, totalPrix, totalDuree);
-        if (!pdfBuffer) throw new Error("Échec de la génération du PDF");
+        // const pdfBuffer = await generateDevisPDF(date, services, totalPrix, totalDuree);
+        // if (!pdfBuffer) throw new Error("Échec de la génération du PDF");
 
         // 3. Récupération et validation du template
         let template =getandCompleteHTML(date, services);
@@ -65,23 +64,23 @@ async function sendMailUsingTemplate(auth_generique, toEmail, fromEmail, date, s
             to: toEmail,
             subject: "Confirmation de votre rendez-vous - Garage",
             html: htmlContent,
-            attachments: [
-                {
-                    filename: "devis.pdf",
-                    content: pdfBuffer, 
-                    contentType: "application/pdf"
-                }
-            ]
+            // attachments: [
+            //     {
+            //         filename: "devis.pdf",
+            //         content: pdfBuffer, 
+            //         contentType: "application/pdf"
+            //     }
+            // ]
         };
 
         // 6. Envoi de l'email
         const info = await transporter.sendMail(mailOptions);
-        console.log("📩 Email envoyé avec succès:", info.messageId);
+        console.log("Email envoyé avec succès:", info.messageId);
 
         return info.messageId;
 
     } catch (error) {
-        console.error("❌ Erreur critique:", error);
+        console.error(" Erreur critique:", error);
                 throw error; // Propager l'erreur originale
     }
 }
