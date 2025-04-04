@@ -153,6 +153,42 @@ router.patch('/:id/annuler', authMiddleware(['mecanicien', 'client', 'manager'])
     }
 });
 
+router.patch('/:id/replannifier', authMiddleware(['mecanicien', 'client', 'manager']), async (req, res) => {
+    try{
+        const { id } = req.params;
+
+        if(req.user.role === 'client'){
+            const action = Action.findById(id);
+            if(action.vehicule.utilisateur != req.user.id){
+                return res.status(401).json({ message: "Accès refusé" });
+            }
+        }
+        const dernierStatut = await Statut.findOne({ action: id })
+            .sort({ createdAt: -1 }) 
+            .populate('utilisateur', 'nom prenom email');
+
+        if (!dernierStatut) {
+            return res.status(404).json({ message: "Aucun statut trouvé pour cette action" });
+        }
+
+        if(dernierStatut.etat >= constantes.etatstatut.termine || dernierStatut.etat === constantes.etatstatut.plannifie){
+            return res.status(400).json({ error : "Cette action ne peut plus être replannifié"});
+        } else {
+            const statut = new Statut({
+                action : id,
+                utilisateur : req.user.id,
+                etat : constantes.etatstatut.plannifie
+            });
+            await statut.save();
+
+            res.json({ message: "Action : replannifier action avec succès.", statut });
+        }
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.get('/:id/statut', authMiddleware(['manager','mecanicien', 'client']), async (req, res) => {
     try{
         const { id } = req.params;
