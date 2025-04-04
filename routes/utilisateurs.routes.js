@@ -94,7 +94,8 @@ router.get("/mecaniciens", authMiddleware(['manager']), async(req, res) => {
         console.log(error.message);
     }
 });
-
+// services qu'une personne peut prendre pour ce véhicule
+// nisy 2 teo de ny 1 nofafako
 router.get('/services/:vehiculeId', authMiddleware(['client']), async (req, res) => {
     try {
         const vehiculeId = req.params.vehiculeId;
@@ -123,60 +124,47 @@ router.get('/services/:vehiculeId', authMiddleware(['client']), async (req, res)
     }
 });
 
-router.get('/services/:vehiculeId', authMiddleware(['client']), async (req, res) => {
+router.get('/utilisateurs/:idpers?', authMiddleware(['manager']), async (req, res) => {
     try {
-        const vehiculeId = req.params.vehiculeId;
+        const { idpers } = req.params;  // Si pas d'id, ce sera undefined
 
-        // Récupérer le type de véhicule associé au véhicule sélectionné
-        const vehicule = await Vehicule.findById(vehiculeId);
-        if (!vehicule) {
-            return res.status(404).json({ message: "Véhicule non trouvé." });
+        if (idpers) {
+            // Cas avec un idpers : récupérer les détails d'un utilisateur spécifique
+            const utilisateur = await Utilisateur.findById(idpers);
+            if (!utilisateur) {
+                return res.status(404).json({ message: 'Utilisateur non trouvé' });
+            }
+
+            const totalVehicule = await Vehicule.countDocuments({ utilisateur: idpers });
+            const vehicules = await Vehicule.find({ utilisateur: idpers }).populate('typevehicule');
+            const rendezvous = await Rendezvous.find({ utilisateur: idpers })
+                .populate({
+                    path: 'vehicule',
+                    match: { utilisateur: idpers },
+                    select: 'libelle'
+                })
+                .populate({
+                    path: 'services.service',
+                    select: 'nom description historique',
+                })
+                .populate('utilisateur', 'nom prenom')
+                .sort({ date: -1 });
+
+            return res.status(200).json({
+                utilisateur,
+                vehicules,
+                totalVehicule,
+                rendezvous
+            });
+        } else {
+            // Cas sans idpers : récupérer la liste de tous les utilisateurs (clients)
+            const utilisateurs = await Utilisateur.find({ role: 'client' }); // Filtrer les clients
+            return res.status(200).json({ utilisateurs });
         }
-
-        // Récupérer les services compatibles avec ce type de véhicule
-        const services = await Service.find({ 'historique.typevehicule': vehicule.typevehicule });
-
-        res.status(200).json(services);
     } catch (error) {
-        console.log(error.message);
+        console.error("Erreur lors de la récupération des données", error);
         res.status(500).json({ message: error.message });
     }
 });
 
-
-router.get('/utilisateurs/:idpers', authMiddleware(['manager']), async (req, res) => {
-    try {
-        const { idpers } = req.params;  // L'ID de l'utilisateur passé dans les paramètres de l'URL
-
-        // Rechercher les véhicules de cet utilisateur (idpers)
-        const totalVehicule = await Vehicule.countDocuments({ utilisateur: idpers });
-
-        // Requête pour récupérer les véhicules associés à l'utilisateur
-        const vehicules = await Vehicule.find({ utilisateur: idpers }).populate('typevehicule');
-
-        // Requête pour récupérer les rendez-vous associés à cet utilisateur et ses véhicules
-        const rendezvous = await Rendezvous.find({ utilisateur: idpers })
-            .populate({
-                path: 'vehicule',
-                match: { utilisateur: idpers },  // S'assurer que les véhicules sont liés à cet utilisateur
-                select: 'libelle'
-            })
-            .populate({
-                path: 'services.service',
-                select: 'nom description historique',
-            })
-            .populate('utilisateur', 'nom prenom') // Populate de l'utilisateur pour récupérer les infos de l'utilisateur
-            .sort({ date: -1 }); // Optionnel : trier les rendez-vous par date, si besoin
-
-        // Retourner les résultats
-        res.status(200).json({
-            vehicules,
-            rendezvous,
-            totalVehicule
-        });
-    } catch (error) {
-        console.error("Erreur lors de la récupération des véhicules et rendez-vous", error);
-        res.status(500).json({ message: error.message });
-    }
-});
 module.exports = router;

@@ -1,7 +1,7 @@
 const Action = require('../models/Action');
 const Utilisateur = require('../models/Utilisateur');
 const constantes = require('../config/variable.json');
-
+const Rendezvous = require('../models/Rendezvous');
   
 exports.getMecanicienOccupation = async (req, res) => {
     try {
@@ -62,3 +62,65 @@ exports.getMecanicienOccupation = async (req, res) => {
         res.status(500).json({ message: "Erreur serveur" });
     }
 };
+
+exports.getInvoiceByRendezvous = async (req, res) => {
+    try {
+      const { idRendezvous } = req.params;
+      
+      // Récupérer le rendez-vous avec l'utilisateur associé
+      const rendezvous = await Rendezvous.findById(idRendezvous)
+        .populate('utilisateur', 'nom prenom email')  // Peupler l'utilisateur du rendez-vous
+        .exec();
+  
+      if (!rendezvous) {
+        return res.status(404).json({ message: "Rendez-vous non trouvé." });
+      }
+  
+      // Récupérer les actions associées à ce rendez-vous
+      const actions = await Action.find({ rendezVous: idRendezvous })
+        .populate('service', 'nom prix')  
+        .populate('vehicule', 'matricule libelle')  // Vous récupérez déjà les informations du véhicule
+        .exec();
+  
+      if (actions.length === 0) {
+        return res.status(404).json({ message: "Aucune action trouvée pour ce rendez-vous." });
+      }
+  
+      let total = 0;
+      const invoiceItems = actions.map((action, index) => {
+        const totalPrice = action.prix;
+        total += totalPrice;
+  
+        return {
+          id: index + 1,
+          item: action.service.nom,
+          price: action.prix,
+          total: totalPrice,
+        };
+      });
+  
+      // Inclure les informations de l'utilisateur et du véhicule
+      const utilisateur = rendezvous.utilisateur;  // Utilisateur est associé au rendez-vous
+      const vehicule = actions[0].vehicule;  // Puisque toutes les actions sont pour le même véhicule
+  
+      return res.status(200).json({
+        rendezvous: idRendezvous,
+        utilisateur: {
+          nom: utilisateur.nom,
+          prenom: utilisateur.prenom,
+          email: utilisateur.email,
+        },
+        vehicule: {
+          matricule: vehicule.matricule,
+          libelle: vehicule.libelle,
+        },
+        items: invoiceItems,
+        total: total,
+      });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: "Erreur interne du serveur" });
+    }
+  };
+  
+

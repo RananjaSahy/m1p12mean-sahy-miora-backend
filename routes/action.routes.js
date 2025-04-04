@@ -4,9 +4,7 @@ const Action = require('../models/Action');
 const authMiddleware = require('../middlewares/authMiddleware');
 const Statut = require('../models/Statut');
 const constantes = require('../config/variable.json');
-
-const { getMecanicienOccupation } = require('../controllers/action.controller');
-
+const actionController = require('../controllers/action.controller');
 const router = express.Router();
 router.post('/', authMiddleware(['client','mecanicien','manager']), async (req, res) => {
     try {
@@ -200,6 +198,7 @@ router.put('/:id', authMiddleware(['client','mecanicien','manager']),  async (re
 });
 
 
-router.get('/taux-occupation', getMecanicienOccupation);
+router.get('/taux-occupation', actionController.getMecanicienOccupation);
+router.get('/facture/:idRendezvous', actionController.getInvoiceByRendezvous);
 module.exports = router;
 

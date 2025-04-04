@@ -165,35 +165,32 @@ router.post('/confirmer', authMiddleware(['client']), async (req, res) => {
 router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
     try {
         const utilisateurId = req.user.id;
-
-        // Récupérer les rendez-vous avec les services et le véhicule associé
         const rendezvous = await Rendezvous.find({ utilisateur: utilisateurId })
             .populate({
                 path: 'vehicule',
-                select: 'libelle typevehicule' // On récupère le type du véhicule
+                select: 'libelle typevehicule' 
             })
             .populate({
-                path: 'services',
-                select: 'nom description historique' // On récupère l'historique des prix
+                path: 'services.service', 
+                select: 'nom description historique' 
             });
 
-        // Formatter les données pour ajouter prix et durée estimés
         const formattedRendezvous = rendezvous.map(rdv => {
-            const servicesFormatted = rdv.services.map(service => {
-                // Vérifie que service.historique est bien défini avant d'utiliser find()
+            const servicesFormatted = rdv.services.map(serviceItem => {
+                const service = serviceItem.service; 
+                
                 const historiqueValide = service.historique?.find(hist =>
                     hist.typevehicule.equals(rdv.vehicule.typevehicule) && hist.etat
                 );
-            
+
                 return {
                     _id: service._id,
                     nom: service.nom,
                     description: service.description,
-                    prixEstime: historiqueValide ? historiqueValide.prix : null,
-                    dureeEstimee: historiqueValide ? historiqueValide.duree : null
+                    prixEstime: historiqueValide ? historiqueValide.prix : 'N/A',
+                    dureeEstimee: historiqueValide ? historiqueValide.duree : 'N/A'
                 };
             });
-            
 
             return {
                 _id: rdv._id,
@@ -211,20 +208,39 @@ router.get('/mes-rendezvous', authMiddleware(['client']), async (req, res) => {
     }
 });
 
+  
 
-async function  sendMailUsingTemplate(date,services,totalPrix,totalDuree,email){
-    try{
+async function sendMailUsingTemplate(date, services, totalPrix, totalDuree, email) {
+    try {
         const auth = {
-            user:process.env.USER_MAIL,
-            pass:process.env.USER_PASS
+            user: process.env.USER_MAIL,
+            pass: process.env.USER_PASS
         };
-        const toEmail = email
-        const froms = process.env.USER_ADRESS
-        await Mail(auth,toEmail,froms,date,services,totalPrix,totalDuree);
-    }catch(eror){
-        console.log("error");
+        
+        const toEmail = email;
+        const froms = process.env.USER_ADRESS;
+        const formattedDate = new Date(date).toLocaleDateString('fr-FR'); // Format français
+
+        // Effectuer un populate pour récupérer les noms des services à partir de leur ObjectId
+        const servicesPopulated = await Service.find({ 
+            '_id': { $in: services.map(service => service.service) }  // On utilise l'ObjectId dans "service"
+        });
+
+        // Transformation des services en une chaîne de noms concaténés
+        const servicesString = servicesPopulated.map(service => service.nom).join(', ');
+
+        // Affichage pour debug (vous pouvez supprimer cette ligne après)
+        console.log("Services après population: ", servicesString);
+
+        // Appel de la fonction Mail avec les services formatés en string et la date formatée
+        await Mail(auth, toEmail, froms, formattedDate, servicesString, totalPrix, totalDuree);
+
+    } catch (error) {
+        console.log("Erreur lors de l'envoi de l'email :", error);
     }
 }
+
+
 
 // devis
 async function calculDevis(date, vehicule, services) {
@@ -233,19 +249,13 @@ async function calculDevis(date, vehicule, services) {
             return { totalPrix: 0, totalDuree: 0, details: [] }; 
         }
 
-        // console.log("🔹 Services demandés :", services);
-        // console.log("🔹 ID du véhicule :", vehicule);
-
-        // Récupérer le type de véhicule à partir de l'ID du véhicule
         const vehiculeData = await Vehicule.findById(vehicule).populate('typevehicule');
         if (!vehiculeData || !vehiculeData.typevehicule) {
             throw new Error("Type de véhicule introuvable.");
         }
 
         const typeVehiculeId = vehiculeData.typevehicule._id;
-        // console.log("🔹 Type de véhicule trouvé :", typeVehiculeId);
-
-        // Récupérer les services demandés avec seulement l'historique le plus récent
+        
         const servicesDetails = await Service.aggregate([
             { $match: { _id: { $in: services.map(id => new mongoose.Types.ObjectId(id)) } } }, // Filtrer les services demandés
             { $unwind: "$historique" }, // Décomposer l'historique
@@ -262,9 +272,6 @@ async function calculDevis(date, vehicule, services) {
             }
         ]);
 
-        // console.log("🔹 Services trouvés :", servicesDetails);
-
-        // Calculer le total du devis
         const totalPrix = servicesDetails.reduce((sum, service) => sum + service.prix, 0);
         const totalDuree = servicesDetails.reduce((sum, service) => sum + service.duree, 0);
 
@@ -283,11 +290,7 @@ router.get('/', async (req, res) => {
         
         console.log("req.query = ", req.query);
         console.log("FUSEAU HORAIRE SERVEUR:", Intl.DateTimeFormat().resolvedOptions().timeZone);
-        // if (req.query.dateMin || req.query.dateMax) {
-        //     filters.date = {};
-        //     if (req.query.dateMin) filters.date.$gte = new Date(req.query.dateMin);
-        //     if (req.query.dateMax) filters.date.$lte = new Date(req.query.dateMax);
-        // }    
+
         if (req.query.dateMin || req.query.dateMax) {
             filters.date = {};
             
