@@ -112,9 +112,8 @@ router.get('/', authMiddleware(['client', 'manager', 'mecanicien']), async (req,
 
 router.get('/search', authMiddleware(['client', 'manager', 'mecanicien']), async (req, res) => {
     try {
-        let { page = 1, limit = 10, service, typevehicule, prixMin, prixMax } = req.query;
+        let { page = 1, limit, service, typevehicule, prixMin, prixMax } = req.query;
         const role = req.user.role;
-
         // Conversion des paramètres
         page = parseInt(page, 10);
         limit = parseInt(limit, 10);
